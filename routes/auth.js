@@ -155,4 +155,48 @@ router.post('/login', async (req, res) => {
             res.status(500).json({ message: 'Failed to login user' });
         }
 });
+
+// 4. Admin Login
+router.post('/admin/login', async (req, res) => {
+    const { email, otp } = req.body;
+
+    if (!email || !otp) {
+        return res.status(400).json({ message: 'Email and OTP are required' });
+    }
+
+    try {
+        // Find OTP and check for expiration
+        const otpRecord = await OTP.findOne({ email, otp });
+
+        if (!otpRecord) {
+            return res.status(401).json({ message: 'Invalid OTP' });
+        }
+
+        if (otpRecord.expiresAt < new Date()) {
+            return res.status(401).json({ message: 'OTP has expired' });
+        }
+
+        // Check if user exists AND is an admin
+        const user = await User.findOne({ email });
+        if (!user) {
+            return res.status(404).json({ message: 'User not found' });
+        }
+
+        if (!user.isAdmin) { // Check the isAdmin flag
+            return res.status(403).json({ message: 'Unauthorized' }); // 403 Forbidden
+        }
+
+        // Generate JWT
+        const token = jwt.sign({ userId: user._id, isAdmin: true }, process.env.JWT_SECRET, { expiresIn: '30m' });
+
+        // Delete the OTP record
+        await OTP.deleteOne({ email });
+
+        res.status(200).json({ message: 'Admin login successful', token, user: { id: user._id, email: user.email, isAdmin: user.isAdmin } });
+
+    } catch (error) {
+        console.error('Error in /admin/login:', error);
+        res.status(500).json({ message: 'Failed to login admin' });
+    }
+});
 module.exports = router;
